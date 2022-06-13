@@ -59,11 +59,12 @@ assert_eq(Lhs &&lhs, Rhs &&rhs,
 
 // Helper struct to allow variadic template pack and then a defaulted source
 // location. This instanciates the source location in it's constructor.
-// TODO: I don't like that the user has to explicitly use this.
+// TODO: I don't like that the user has to explicitly call this constructor
+// but it's really tricky to make it any better (without macros)
 template <typename T> struct FnWithSource {
-  explicit FnWithSource(T _fn,
-                        const std::experimental::source_location _location =
-                            std::experimental::source_location::current())
+  explicit constexpr FnWithSource(
+      T _fn, const std::experimental::source_location _location =
+                 std::experimental::source_location::current())
       : fn(std::move(_fn)), location(_location) {}
 
   T fn;
@@ -87,11 +88,12 @@ constexpr void assert_false(bool val,
 }
 
 template <typename Fn, typename... Args>
-requires std::invocable<Fn, Args...> constexpr void
+requires std::invocable<
+    Fn, Args...> [[nodiscard]] constexpr std::invoke_result_t<Fn, Args...>
 assert_nothrow(const FnWithSource<Fn> &fn, Args &&...args) {
   try {
     // Can't forward args here, because it's potentially used in the catch
-    std::invoke(fn.fn, args...);
+    return std::invoke(fn.fn, args...);
 
   } catch (const std::exception &e) {
     auto args_str = detail::args_string(std::forward<Args>(args)...);
@@ -114,7 +116,7 @@ struct AnyException {};
 
 template <typename Exception = AnyException, typename Fn, typename... Args>
 requires std::invocable<Fn, Args...> constexpr void
-assert_throw(FnWithSource<Fn> fn, Args &&...args) {
+assert_throw(const FnWithSource<Fn> &fn, Args &&...args) {
   if constexpr (std::is_same_v<Exception, AnyException>) {
     try {
       // Can't forward args here, because it's used later

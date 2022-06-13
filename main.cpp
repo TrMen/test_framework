@@ -1,6 +1,7 @@
 
 #include <thread>
 
+#include "asserts.hpp"
 #include "test.hpp"
 
 using namespace testing;
@@ -8,6 +9,22 @@ using namespace testing;
 constexpr void add() { assert_eq(1 + 1, 2); }
 
 constexpr void complex() { assert_eq(1, 1); }
+
+void verify_exceptions() {
+  constexpr auto nonthrowing = [](int i) { return i + 1; };
+  // This assert also return the result of the invocation
+  int result = assert_nothrow(FnWithSource{nonthrowing}, 1);
+  assert_eq(result, 2);
+
+  auto throwing = [](int i) { throw std::invalid_argument{std::to_string(i)}; };
+  // Succeeds on any thrown exception. These return nothing since they are
+  // intended to throw.
+  assert_throw(FnWithSource{throwing}, 1);
+  // This succeeds only if that specific exception is thrown and fails others
+  assert_throw<std::invalid_argument>(FnWithSource{throwing}, 1);
+  // Expecting a base-class is also fine
+  assert_throw<std::exception>(FnWithSource{throwing}, 1);
+}
 
 void takes_a_sec() { std::this_thread::sleep_for(std::chrono::seconds(1)); }
 
@@ -54,7 +71,7 @@ int main() {
   total += TEST_ALL_CONSTEXPR(add, complex, using_verify).fail_count;
   total += TEST_ALL_FIXTURE_CONSTEXPR(Fixture, &Fixture::add).fail_count;
 
-  detail::verify(total == 0);
+  detail::verify(total == 0, "Total is not 0");
 
   return total;
 }
