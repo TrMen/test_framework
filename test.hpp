@@ -51,8 +51,6 @@ concept testsuite = requires(T suite, std::string_view sv) {
   suite.increment_failed();
 };
 
-template <typename T> struct constexpr_context_helper {};
-
 constexpr void verify(bool condition, std::string_view message = "",
                       const std::experimental::source_location loc =
                           std::experimental::source_location::current()) {
