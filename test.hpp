@@ -13,8 +13,8 @@
 
 namespace testing {
 
-struct TestFailure : std::logic_error {
-  explicit TestFailure(const std::string &what) : std::logic_error(what) {}
+struct AssertFailure : std::logic_error {
+  explicit AssertFailure(const std::string &what) : std::logic_error(what) {}
 };
 
 namespace detail {
@@ -124,9 +124,9 @@ template <typename T> std::string to_string(T &&val) {
 
 [[noreturn]] inline void fail(std::experimental::source_location location,
                               std::string_view str) {
-  throw TestFailure{fmt::format("{}:{}:{} in {}(): {}\n", location.file_name(),
-                                location.line(), location.column(),
-                                location.function_name(), str)};
+  throw AssertFailure{fmt::format(
+      "{}:{}:{} in {}(): {}\n", location.file_name(), location.line(),
+      location.column(), location.function_name(), str)};
 }
 
 constexpr bool isspace(char c) {
@@ -302,11 +302,13 @@ constexpr bool test_single(Suite &test_suite, std::string_view fn_name,
   try {
     std::invoke(std::forward<Fn>(fn));
     passed = true;
-  } catch (const TestFailure &) {
+  } catch (const AssertFailure &e) {
     passed = false;
+    fmt::print("{}", e.what());
   }
 
-  detail::print("{}: {}\n", passed ? detail::PASSED : detail::FAILED, fn_name);
+  detail::print("{}: {}\n\n", passed ? detail::PASSED : detail::FAILED,
+                fn_name);
 
   test_suite.increment_total();
 
@@ -353,12 +355,14 @@ test_single_with_fixture(Suite &test_suite, std::string_view fn_name,
     try {
       std::invoke(std::forward<Method>(fn), &fixture);
       passed = true;
-    } catch (const TestFailure &) {
+    } catch (const AssertFailure &e) {
       passed = false;
+      fmt::print("{}", e.what());
     }
   }
 
-  detail::print("{}: {}\n", passed ? detail::PASSED : detail::FAILED, fn_name);
+  detail::print("{}: {}\n\n", passed ? detail::PASSED : detail::FAILED,
+                fn_name);
 
   test_suite.increment_total();
 
