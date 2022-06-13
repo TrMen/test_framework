@@ -55,9 +55,9 @@ constexpr void verify(bool condition, std::string_view message = "",
                       const std::experimental::source_location loc =
                           std::experimental::source_location::current()) {
   if (not condition) {
-    throw std::invalid_argument(
-        fmt::format("{}:{}:{} in {}(): {}\n", loc.file_name(), loc.line(),
-                    loc.column(), loc.function_name(), message));
+    throw std::invalid_argument(fmt::format(
+        "{}:{}:{} in {}(): Verfiy failed. Message: '{}'\n", loc.file_name(),
+        loc.line(), loc.column(), loc.function_name(), message));
   }
 }
 
