@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <experimental/source_location>
 #include <fmt/core.h>
 #include <stdexcept>
@@ -11,6 +12,27 @@
 namespace testing {
 
 namespace detail {
+
+template <size_t size> struct StringLiteral {
+  explicit StringLiteral(const char (&str)[size]) // NOLINT
+  {
+    std::copy_n(str, size, buff.data());
+  }
+
+  std::array<char, size> buff;
+};
+
+template <printable... Args>
+constexpr void print(const std::string_view fmt_str, Args &&...args) { // NOLINT
+  if (not std::is_constant_evaluated()) {
+    // TODO: comptime checking doesn't work here, because I'm not in
+    // a constexpr context. But fmt_str is logically still comptime,
+    // so I need to take only literals somehow
+    fmt::vprint(fmt_str, fmt::make_args_checked<Args...>(fmt_str, args...));
+  }
+
+  // TODO: Do something sensible for test reporting at compile-time
+}
 
 constexpr void verify(bool condition, std::string_view message = "",
                       const std::experimental::source_location loc =
@@ -42,15 +64,6 @@ constexpr const char *strchr(const char *str, int i) {
   }
 
   return (*str == c) ? str : nullptr;
-}
-
-template <printable... Args>
-constexpr void print(fmt::format_string<Args...> fmt_str, Args &&...args) {
-  if (not std::is_constant_evaluated()) {
-    fmt::print(fmt_str, args...);
-  }
-
-  // TODO: Do something sensible for test reporting at compile-time
 }
 
 struct ConstexprTestSuite {
@@ -93,18 +106,23 @@ constexpr const char *PASSED = "\033[0;32mPASSED\33[0m";
 } // namespace detail
 
 struct TestSuite {
-  TestSuite() = default;
+  TestSuite() : start(std::chrono::system_clock::now()){};
 
   void add_failed_test(std::string_view sv) { failed_testnames.push_back(sv); }
 
   [[nodiscard]] int status() const { return failed; }
 
   void report() const {
+    auto end = std::chrono::system_clock::now();
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(end - start);
+
     detail::print("\n");
     for (const auto &failed_testname : failed_testnames) {
       detail::print("{}: {}\n", detail::FAILED, failed_testname);
     }
-    detail::print("SUMMARY: Ran {} tests. {} failed.\n\n", total, failed);
+    detail::print("SUMMARY: Ran {} tests in {} seconds. {} failed.\n\n", total,
+                  elapsed.count(), failed);
   }
 
   void increment_total() { total += 1; }
@@ -112,7 +130,8 @@ struct TestSuite {
 
   int total = 0;
   int failed = 0;
-  std::vector<std::string_view> failed_testnames;
+  std::chrono::time_point<std::chrono::system_clock> start;
+  std::vector<std::string_view> failed_testnames{};
 };
 
 template <detail::testsuite Suite> struct TestInfo {
@@ -267,7 +286,8 @@ template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
 #define TEST_ALL_CONSTEXPR(...)                                                \
   []() {                                                                       \
     constexpr testing::detail::ConstexprTestSuite suite;                       \
-    auto fail_c = testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);         \
+    constexpr auto fail_c =                                                    \
+        testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                   \
     suite.report();                                                            \
     return TestInfo{suite, fail_c};                                            \
   }()
