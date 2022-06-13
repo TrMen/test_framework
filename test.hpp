@@ -75,7 +75,7 @@ constexpr const char *skip_whitespace_and_ampersand(const char *str) {
 constexpr const char *FAILED = "\033[0;31mFAILED\33[0m";
 constexpr const char *PASSED = "\033[0;32mPASSED\33[0m";
 
-template <typename... Ts> std::string args_string(Ts &&...args) {
+template <detail::printable... Ts> std::string args_string(Ts &&...args) {
   std::stringstream str;
   ((str << args << ", "), ...);
 
@@ -184,11 +184,9 @@ bool test_single(TestSuite &testInfo, std::string_view fn_name, Fn &&fn) {
   return passed;
 }
 
-template <typename Fn, typename... Fns>
-    requires detail::testcase<Fn> &&
-    (detail::testcase<Fns> && ...) int test_all(TestSuite &testInfo,
-                                                const char *fn_names, Fn &&fn,
-                                                Fns &&...rest) {
+template <detail::testcase Fn, detail::testcase... Fns>
+int test_all(TestSuite &testInfo, const char *fn_names, Fn &&fn,
+             Fns &&...rest) {
   fn_names = detail::skip_whitespace_and_ampersand(fn_names);
   if constexpr (sizeof...(rest) > 0) {
     const char *pcomma = strchr(fn_names, ',');
@@ -207,11 +205,10 @@ template <typename Fn, typename... Fns>
   }
 }
 
-template <typename Class, typename Method>
-requires detail::testfixture<Class> &&
-    detail::fixture_testcase<Class, Method> bool
-    test_single_with_fixture(TestSuite &testInfo, std::string_view fn_name,
-                             Method &&fn) {
+template <detail::testfixture Class, typename Method>
+requires detail::fixture_testcase<Class, Method> bool
+test_single_with_fixture(TestSuite &testInfo, std::string_view fn_name,
+                         Method &&fn) {
   fmt::print("Running {}...\n", fn_name);
 
   bool passed = false;
@@ -240,9 +237,8 @@ requires detail::testfixture<Class> &&
   return passed;
 }
 
-template <typename Klass, typename Method, typename... Methods>
-    requires detail::testfixture<Klass> &&
-        detail::fixture_testcase<Klass, Method> &&
+template <detail::testfixture Klass, typename Method, typename... Methods>
+    requires detail::fixture_testcase<Klass, Method> &&
     (detail::fixture_testcase<Klass, Methods> &&
      ...) int test_all_with_fixture(TestSuite &testInfo, const char *fn_names,
                                     Method &&fn, Methods &&...rest) {
