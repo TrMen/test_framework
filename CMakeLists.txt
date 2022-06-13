@@ -64,6 +64,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
   set(BP_ENABLE_IPO OFF)
 endif()
 
+set(FMT_SYSTEM_HEADERS ON CACHE BOOL "Don't emit warnings for fmt by treating it as a system library" FORCE)
+
 # @extension Add subdirectories here
 add_subdirectory(../fmt build)
 
@@ -174,22 +176,73 @@ if(MSVC)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
 target_compile_options(cmake_cpp_boilerplate_compiler_options INTERFACE      			   
-                                   -g
-                						 		   -Wall
-                                   -Wextra
-                                   -Wshadow
-                                   -Wnon-virtual-dtor
-                                   -Wold-style-cast
-                                   -Wcast-align
-                                   -Wunused
-                                   -Woverloaded-virtual
-                                   -Wpedantic
-                                   -Wconversion
-                                   -Wsign-conversion
-                                   -Wnull-dereference
-                                   -Wdouble-promotion
-                                   -Wformat=2)
-  if(BP_WARNING_AS_ERROR)
+                   -g
+								   -Wall
+                   -Wextra
+                   -Wshadow
+                   -Wnon-virtual-dtor
+                   -Wold-style-cast
+                   -Wcast-align
+                   -Wunused
+                   -Woverloaded-virtual
+                   -Wpedantic
+                   -Wconversion
+                   -Wsign-conversion
+                   -Wnull-dereference
+                   -Wdouble-promotion
+                   -Wformat=2
+								   -Weffc++
+								   -pedantic-errors
+								   -Wcast-align
+								   -Wcast-qual
+								   -Wchar-subscripts  
+								   -Wcomment 
+								   -Wconversion
+								   -Wdisabled-optimization 
+								   -Wfloat-equal  
+								   -Wformat  
+								   -Wformat-nonliteral 
+								   -Wformat-security 
+								   -Wformat-y2k
+								   -Wimplicit  
+								   -Wimport  
+								   -Winit-self  
+								   -Winline
+								   -Winvalid-pch
+								   -Wmissing-braces
+								   -Wmissing-field-initializers
+								   -Wmissing-format-attribute 
+								   -Wmissing-include-dirs
+								   -Wmissing-noreturn 
+								   -Wpacked
+								   -Wparentheses
+								   -Wpointer-arith
+								   -Wredundant-decls
+								   -Wreturn-type
+								   -Wsequence-point
+								   -Wshadow
+								   -Wsign-compare
+								   -Wstack-protector
+								   -Wstrict-aliasing
+								   -Wstrict-aliasing=2
+								   -Wswitch
+								   -Wswitch-default
+								   -Wswitch-enum
+								   -Wtrigraphs
+								   -Wuninitialized
+								   -Wunknown-pragmas
+								   -Wunreachable-code
+								   -Wunused
+								   -Wunused-function
+								   -Wunused-label
+								   -Wunused-parameter
+								   -Wunused-value
+								   -Wunused-variable
+								   -Wvariadic-macros
+								   -Wvolatile-register-var
+								   -Wwrite-strings)
+
+ if(BP_WARNING_AS_ERROR)
     message("Using warnings as errors")
 	  target_compile_options(cmake_cpp_boilerplate_compiler_options INTERFACE -Werror)
   endif()
@@ -201,6 +254,7 @@ target_compile_options(cmake_cpp_boilerplate_compiler_options INTERFACE
                                   -Wduplicated-branches
                                   -Wlogical-op
                                   -Wuseless-cast
+                                  -Wunsafe-loop-optimizations
                            )
   endif()
 endif()
