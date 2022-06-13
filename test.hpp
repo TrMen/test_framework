@@ -1,55 +1,16 @@
 #pragma once
 
-#include <concepts>
 #include <experimental/source_location>
 #include <fmt/core.h>
-#include <iostream>
-#include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <thread>
-#include <type_traits>
+
+#include "asserts.hpp"
+#include "concepts.hpp"
 
 namespace testing {
 
-struct AssertFailure : std::logic_error {
-  explicit AssertFailure(const std::string &what) : std::logic_error(what) {}
-};
-
 namespace detail {
-template <typename T> concept printable = requires(T &&t) {
-  { std::cout << std::forward<T>(t) }
-  ->std::convertible_to<std::ostream &>;
-};
-
-template <typename T> concept testcase = requires(T &&t) {
-  { std::invoke(std::forward<T>(t)) }
-  ->std::same_as<void>;
-};
-
-template <typename T> concept testfixture = requires(T &&t) {
-  requires std::is_default_constructible_v<T>;
-};
-
-template <typename Class, typename Method>
-concept fixture_testcase = requires(Class fixture, Method &&method) {
-  requires testfixture<Class>;
-
-  { std::invoke(std::forward<Method>(method), &fixture) }
-  ->std::same_as<void>;
-};
-
-template <typename T>
-concept testsuite = requires(T suite, std::string_view sv) {
-  { suite.status() }
-  ->std::same_as<int>;
-
-  suite.add_failed_test(sv);
-
-  suite.increment_total();
-  suite.increment_failed();
-};
 
 constexpr void verify(bool condition, std::string_view message = "",
                       const std::experimental::source_location loc =
@@ -107,26 +68,6 @@ struct ConstexprTestSuite {
   }
 };
 
-template <typename T> std::string to_string(T &&val) {
-  if constexpr (printable<T>) {
-    std::stringstream s;
-    s << std::forward<T>(val);
-    return s.str();
-  } else if constexpr (std::is_enum_v<T &&>) {
-    return std::to_string(
-        static_cast<std::underlying_type_t<T>>(std::forward<T>(val)));
-  } else {
-    return "<UNPRINTABLE>";
-  }
-}
-
-[[noreturn]] inline void fail(std::experimental::source_location location,
-                              std::string_view str) {
-  throw AssertFailure{fmt::format(
-      "{}:{}:{} in {}(): {}\n", location.file_name(), location.line(),
-      location.column(), location.function_name(), str)};
-}
-
 constexpr bool isspace(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
@@ -146,122 +87,7 @@ constexpr const char *skip_whitespace_and_ampersand(const char *str) {
 constexpr const char *FAILED = "\033[0;31mFAILED\33[0m";
 constexpr const char *PASSED = "\033[0;32mPASSED\33[0m";
 
-template <typename... Args> std::string args_string(Args &&...args) {
-  std::stringstream str;
-  ((str << to_string(std::forward<Args>(args)) << ", "), ...);
-
-  return str.str();
-}
 } // namespace detail
-
-template <typename Lhs, typename Rhs>
-requires std::equality_comparable_with<Lhs, Rhs> constexpr void
-assert_eq(Lhs &&lhs, Rhs &&rhs,
-          const std::experimental::source_location location =
-              std::experimental::source_location::current()) {
-  if (lhs != rhs) {
-    detail::fail(location,
-                 fmt::format("ASSERT: '{}' and '{}' are not equal",
-                             detail::to_string(std::forward<Lhs>(lhs)),
-                             detail::to_string(std::forward<Rhs>(rhs))));
-  }
-}
-
-// Helper struct to allow variadic template pack and then a defaulted source
-// location. This instanciates the source location in it's constructor.
-// TODO: I don't like that the user has to explicitly use this.
-template <typename T> struct FnWithSource {
-  explicit FnWithSource(T _fn,
-                        const std::experimental::source_location _location =
-                            std::experimental::source_location::current())
-      : fn(std::move(_fn)), location(_location) {}
-
-  T fn;
-  std::experimental::source_location location;
-};
-
-constexpr void assert_true(bool val,
-                           const std::experimental::source_location location =
-                               std::experimental::source_location::current()) {
-  if (not val) {
-    detail::fail(location, "ASSERT: Value is false");
-  }
-}
-
-constexpr void assert_false(bool val,
-                            const std::experimental::source_location location =
-                                std::experimental::source_location::current()) {
-  if (val) {
-    detail::fail(location, "ASSERT: Value is true");
-  }
-}
-
-template <typename Fn, typename... Args>
-requires std::invocable<Fn, Args...> constexpr void
-assert_nothrow(const FnWithSource<Fn> &fn, Args &&...args) {
-  try {
-    // Can't forward args here, because it's potentially used in the catch
-    std::invoke(fn.fn, args...);
-
-  } catch (const std::exception &e) {
-    auto args_str = detail::args_string(std::forward<Args>(args)...);
-    detail::fail(fn.location,
-                 fmt::format("ASSERT: Unexpected std::exception thrown "
-                             "with arguments '{}'. what(): '{}'",
-                             std::move(args_str), e.what()));
-  } catch (...) {
-    auto args_str = detail::args_string(std::forward<Args>(args)...);
-    detail::fail(
-        fn.location,
-        fmt::format(
-            "ASSERT: Unexpected unknown exception thrown with arguments '{}'",
-            std::move(args_str)));
-  }
-}
-
-// Helper that can be supplied to assert_throw to match any thrown exception
-struct AnyException {};
-
-template <typename Exception = AnyException, typename Fn, typename... Args>
-requires std::invocable<Fn, Args...> constexpr void
-assert_throw(FnWithSource<Fn> fn, Args &&...args) {
-  if constexpr (std::is_same_v<Exception, AnyException>) {
-    try {
-      // Can't forward args here, because it's used later
-      std::invoke(fn.fn, args...);
-    } catch (...) {
-      return; // PASSED
-    }
-  } else {
-    try {
-      // Can't forward args here, because it's used later
-      std::invoke(fn.fn, args...);
-    } catch (const Exception &) {
-      return; // PASSED
-    } catch (const std::exception &e) {
-      auto args_str = detail::args_string(std::forward<Args>(args)...);
-      detail::fail(fn.location,
-                   fmt::format("ASSERT:Invokation threw exception of "
-                               "unexpected type derived from std::exception "
-                               "with arguments '{}'. what(): '{}'",
-                               std::move(args_str), e.what()));
-    } catch (...) {
-      auto args_str = detail::args_string(std::forward<Args>(args)...);
-      detail::fail(
-          fn.location,
-          fmt::format("ASSERT: Invokation threw exception of unexpected and "
-                      "unknown type with arguments '{}'",
-                      std::move(args_str)));
-    }
-  }
-
-  auto args_str = detail::args_string(std::forward<Args>(args)...);
-  detail::fail(
-      fn.location,
-      fmt::format(
-          "ASSERT: Invokation did not throw an exception with arguments '{}'",
-          std::move(args_str)));
-}
 
 struct TestSuite {
   TestSuite() = default;
@@ -300,7 +126,7 @@ constexpr bool test_single(Suite &test_suite, std::string_view fn_name,
   try {
     std::invoke(std::forward<Fn>(fn));
     passed = true;
-  } catch (const AssertFailure &e) {
+  } catch (const detail::AssertFailure &e) {
     passed = false;
     fmt::print("{}", e.what());
   }
@@ -353,7 +179,7 @@ test_single_with_fixture(Suite &test_suite, std::string_view fn_name,
     try {
       std::invoke(std::forward<Method>(fn), &fixture);
       passed = true;
-    } catch (const AssertFailure &e) {
+    } catch (const detail::AssertFailure &e) {
       passed = false;
       fmt::print("{}", e.what());
     }
