@@ -66,6 +66,9 @@ struct ConstexprTestSuite {
   }
   constexpr void increment_failed() const { // TODO: Something sensible
   }
+
+  void report() const { // TODO Something sensible
+  }
 };
 
 constexpr bool isspace(char c) {
@@ -92,16 +95,11 @@ constexpr const char *PASSED = "\033[0;32mPASSED\33[0m";
 struct TestSuite {
   TestSuite() = default;
 
-  TestSuite(const TestSuite &) = delete;
-  TestSuite(TestSuite &&) = delete;
-  TestSuite &operator=(const TestSuite &) = delete;
-  TestSuite &operator=(TestSuite &&) = delete;
-
   void add_failed_test(std::string_view sv) { failed_testnames.push_back(sv); }
 
   [[nodiscard]] int status() const { return failed; }
 
-  ~TestSuite() {
+  void report() const {
     detail::print("\n");
     for (const auto &failed_testname : failed_testnames) {
       detail::print("{}: {}\n", detail::FAILED, failed_testname);
@@ -115,6 +113,14 @@ struct TestSuite {
   int total = 0;
   int failed = 0;
   std::vector<std::string_view> failed_testnames;
+};
+
+template <detail::testsuite Suite> struct TestInfo {
+  explicit TestInfo(Suite _suite, int fail_c)
+      : suite(std::move(_suite)), fail_count(fail_c) {}
+
+  Suite suite;
+  int fail_count{};
 };
 
 template <detail::testsuite Suite, detail::testcase Fn>
@@ -152,16 +158,17 @@ constexpr int test_all(Suite &test_suite, const char *fn_names, Fn &&fn,
     const char *pcomma = detail::strchr(fn_names, ',');
     std::string_view fn_name{fn_names, static_cast<size_t>(pcomma - fn_names)};
 
-    bool single_passed = test_single(test_suite, fn_name, std::forward<Fn>(fn));
-    auto rest_passed =
+    bool single_failed =
+        !test_single(test_suite, fn_name, std::forward<Fn>(fn));
+    auto rest_fails =
         test_all(test_suite, pcomma + 1, std::forward<Fns>(rest)...);
 
-    return static_cast<int>(single_passed) + rest_passed;
+    return static_cast<int>(single_failed) + rest_fails;
   } else {
     std::string_view fn_name{fn_names, detail::strlen(fn_names)};
 
     return static_cast<int>(
-        test_single(test_suite, fn_name, std::forward<Fn>(fn)));
+        !test_single(test_suite, fn_name, std::forward<Fn>(fn)));
   }
 }
 
@@ -210,17 +217,17 @@ template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
     const char *pcomma = detail::strchr(fn_names, ',');
     std::string_view fn_name{fn_names, static_cast<size_t>(pcomma - fn_names)};
 
-    bool single_passed = test_single_with_fixture<Klass>(
+    bool single_failed = !test_single_with_fixture<Klass>(
         test_suite, fn_name, std::forward<Method>(fn));
 
     auto rest_fails = test_all_with_fixture<Klass>(
         test_suite, pcomma + 1, std::forward<Methods>(rest)...);
 
-    return rest_fails + static_cast<int>(single_passed);
+    return rest_fails + static_cast<int>(single_failed);
   } else {
     std::string_view fn_name{fn_names, detail::strlen(fn_names)};
 
-    return static_cast<int>(test_single_with_fixture<Klass>(
+    return static_cast<int>(!test_single_with_fixture<Klass>(
         test_suite, fn_name, std::forward<Method>(fn)));
   }
 }
@@ -228,38 +235,49 @@ template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
 #define TEST_ALL(...)                                                          \
   []() {                                                                       \
     TestSuite suite;                                                           \
-    return testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                \
+    auto fail_c = testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);         \
+    suite.report();                                                            \
+    return TestInfo{std::move(suite), fail_c};                                 \
   }()
 
 #define TEST_ALL_FIXTURE(klass, ...)                                           \
   []() {                                                                       \
     TestSuite suite;                                                           \
-    return testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__,          \
-                                                 __VA_ARGS__);                 \
+    auto fail_c = testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__,   \
+                                                        __VA_ARGS__);          \
+    suite.report();                                                            \
+    return TestInfo{std::move(suite), fail_c};                                 \
   }()
 
 #define TEST_ALL_SUITE(suite, ...)                                             \
-  testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__)
+  [&suite]() {                                                                 \
+    auto fail_c = testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);         \
+    suite.report();                                                            \
+    return TestInfo{suite, fail_c};                                            \
+  }()
 
 #define TEST_ALL_SUITE_FIXTURE(suite, klass, ...)                              \
-  testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__, __VA_ARGS__)
+  [&suite]() {                                                                 \
+    auto fail_c = testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__,   \
+                                                        __VA_ARGS__);          \
+    suite.report();                                                            \
+    return TestInfo{suite, fail_c};                                            \
+  }()
 
 #define TEST_ALL_CONSTEXPR(...)                                                \
   []() {                                                                       \
-    constexpr detail::ConstexprTestSuite suite;                                \
-    /* TODO: Is there a nice way to check                                      \
-    if all passed function are constexpr? */                                   \
-    constexpr bool passed =                                                    \
-        testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                   \
-    return passed;                                                             \
+    constexpr testing::detail::ConstexprTestSuite suite;                       \
+    auto fail_c = testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);         \
+    suite.report();                                                            \
+    return TestInfo{suite, fail_c};                                            \
   }()
 
 #define TEST_ALL_FIXTURE_CONSTEXPR(klass, ...)                                 \
   []() {                                                                       \
-    constexpr detail::ConstexprTestSuite suite;                                \
-    constexpr bool passed = testing::test_all_with_fixture<klass>(             \
+    constexpr testing::detail::ConstexprTestSuite suite;                       \
+    constexpr auto fail_c = testing::test_all_with_fixture<klass>(             \
         suite, #__VA_ARGS__, __VA_ARGS__);                                     \
-    return passed;                                                             \
+    return TestInfo{suite, fail_c};                                            \
   }()
 
 } // namespace testing

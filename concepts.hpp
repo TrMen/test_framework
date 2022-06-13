@@ -38,6 +38,8 @@ concept testsuite = requires(T suite, std::string_view sv) {
 
   suite.increment_total();
   suite.increment_failed();
+
+  suite.report();
 };
 
 } // namespace testing::detail
