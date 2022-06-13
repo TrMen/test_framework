@@ -33,27 +33,28 @@ struct Fixture {
   int num = 1;
 };
 
-constexpr int increment(int a) { return a + 1; }
+constexpr size_t increment(size_t a) { return a + 1; }
 
 constexpr const char *what_is_it() { return "good"; }
 
 constexpr void using_verify() {
   // To check if the value matches the expected, fail if not, and then return
   // it, you can use v(actual, expected).
-  auto two = v(increment(1), 2);
+  auto two = v(increment(1), 2u);
   // For verifying inequality
-  const auto *good_ptr = vn(&two, nullptr);
+  [[maybe_unused]] const auto *good_ptr = vn(&two, nullptr);
 
   // Or construct a Verify<T> using the literal _v operator, and then use && to
   // do the same. This will return the value of increment(2).
   auto three = increment(2) && 3_v;
-  auto four = 4_v && increment(three);
-  auto three_point_five = 2.5_v && 1 + 1.5;
+  [[maybe_unused]] auto four = 4_v && increment(three);
+  [[maybe_unused]] auto three_point_five =
+      2.5_v && static_cast<long double>(1.0 + 1.5);
   // Does string comparison
-  const auto *str_literal = "good"_v && what_is_it();
+  [[maybe_unused]] const auto *str_literal = "good"_v && what_is_it();
   // For inequality checking, use operator^
-  const auto *good_ptr_two = &three ^ Verify { nullptr };
-  auto twelve = 12 ^ 11_v;
+  [[maybe_unused]] const auto *good_ptr_two = &three ^ Verify { nullptr };
+  [[maybe_unused]] auto twelve = 12u ^ 11_v;
 }
 
 int main() {

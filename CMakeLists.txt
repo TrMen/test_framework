@@ -23,6 +23,7 @@ option(BP_ENABLE_CLANG_TIDY "Enable static analysis with clang-tidy" OFF)
 option(BP_WARNING_AS_ERROR "Treats compiler warnings as errors" ON)
 option(BP_USE_CONAN "Use conan to manage dependencies" OFF)
 option(BP_FORCE_COLOR "Always produce ANSI-colored output (GNU/Clang only)." ON)
+option(BP_USE_MOLD "Use the mold linker" ON)
 
 # ----------------------------------- Configurable stuff -----------------------------------
 
@@ -264,6 +265,18 @@ if(BP_USE_SAFE_STACK)
   else()
     message("Safe Stack sanitizer enabled but compiler is not clang. Ignoring")
   endif()
+endif()
+
+find_program(MOLD mold)
+if(MOLD AND BP_USE_MOLD)
+    message("Using the mold linker")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      target_link_libraries(cmake_cpp_boilerplate_compiler_options INTERFACE -fuse-ld=mold)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+      target_link_libraries(cmake_cpp_boilerplate_compiler_options INTERFACE -B/usr/libexec/mold)
+    else()
+      message(SEND_ERROR "Using a compiler that can't use the mold linker")
+    endif()
 endif()
 
 include_directories(include)
