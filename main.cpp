@@ -57,7 +57,7 @@ constexpr void using_verify() {
   [[maybe_unused]] auto twelve = 12u ^ 11_v;
 }
 
-int main() {
+int main() { // NOLINT: Exception escaping main is fine
   TestSuite suite;
 
   int total = 0;
@@ -71,7 +71,7 @@ int main() {
   total += TEST_ALL_CONSTEXPR(add, complex, using_verify).fail_count;
   total += TEST_ALL_FIXTURE_CONSTEXPR(Fixture, &Fixture::add).fail_count;
 
-  detail::verify(total == 0, "Total is not 0");
+  assert_eq(total, 0);
 
   return total;
 }

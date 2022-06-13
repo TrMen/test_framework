@@ -5,6 +5,7 @@
 #include <fmt/core.h>
 #include <sstream>
 #include <stdexcept>
+#include <type_traits>
 
 #include "concepts.hpp"
 

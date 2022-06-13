@@ -16,7 +16,7 @@ namespace testing {
 namespace detail {
 
 template <printable... Args>
-constexpr void print(const std::string_view fmt_str, Args &&...args) { // NOLINT
+constexpr void print(const std::string_view fmt_str, Args &&...args) {
   if (not std::is_constant_evaluated()) {
     // TODO: comptime checking doesn't work here, because I'm not in
     // a constexpr context. But fmt_str is logically still comptime,
@@ -27,7 +27,7 @@ constexpr void print(const std::string_view fmt_str, Args &&...args) { // NOLINT
   // TODO: Do something sensible for test reporting at compile-time
 }
 
-constexpr void verify(bool condition, std::string_view message = "",
+constexpr void ensure(bool condition, std::string_view message = "",
                       const std::experimental::source_location loc =
                           std::experimental::source_location::current()) {
   if (not condition) {
@@ -38,7 +38,7 @@ constexpr void verify(bool condition, std::string_view message = "",
 }
 
 constexpr size_t strlen(const char *str) {
-  verify(str != nullptr);
+  ensure(str != nullptr);
 
   size_t len = 0;
   for (; *str != '\0'; ++str, ++len) {
