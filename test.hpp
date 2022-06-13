@@ -154,7 +154,6 @@ template <typename... Args> std::string args_string(Args &&...args) {
 
   return str.str();
 }
-
 } // namespace detail
 
 template <typename Lhs, typename Rhs>
@@ -170,6 +169,19 @@ assert_eq(Lhs &&lhs, Rhs &&rhs,
   }
 }
 
+// Helper struct to allow variadic template pack and then a defaulted source
+// location. This instanciates the source location in it's constructor.
+// TODO: I don't like that the user has to explicitly use this.
+template <typename T> struct FnWithSource {
+  explicit FnWithSource(T _fn,
+                        const std::experimental::source_location _location =
+                            std::experimental::source_location::current())
+      : fn(std::move(_fn)), location(_location) {}
+
+  T fn;
+  std::experimental::source_location location;
+};
+
 constexpr void assert_true(bool val,
                            const std::experimental::source_location location =
                                std::experimental::source_location::current()) {
@@ -178,28 +190,79 @@ constexpr void assert_true(bool val,
   }
 }
 
+constexpr void assert_false(bool val,
+                            const std::experimental::source_location location =
+                                std::experimental::source_location::current()) {
+  if (val) {
+    detail::fail(location, "ASSERT: Value is true");
+  }
+}
+
 template <typename Fn, typename... Args>
 requires std::invocable<Fn, Args...> constexpr void
-assert_nothrow(Fn &&fn, Args &&...args,
-               const std::experimental::source_location location =
-                   std::experimental::source_location::current()) {
+assert_nothrow(const FnWithSource<Fn> &fn, Args &&...args) {
   try {
     // Can't forward args here, because it's potentially used in the catch
-    std::invoke(std::forward<Fn>(fn), args...);
+    std::invoke(fn.fn, args...);
+
   } catch (const std::exception &e) {
     auto args_str = detail::args_string(std::forward<Args>(args)...);
-    detail::fail(location,
+    detail::fail(fn.location,
                  fmt::format("ASSERT: Unexpected std::exception thrown "
                              "with arguments '{}'. what(): '{}'",
                              std::move(args_str), e.what()));
-
   } catch (...) {
     auto args_str = detail::args_string(std::forward<Args>(args)...);
     detail::fail(
-        location,
-        fmt::format("ASSERT: Unknown exception thrown with arguments '{}'",
-                    std::move(args_str)));
+        fn.location,
+        fmt::format(
+            "ASSERT: Unexpected unknown exception thrown with arguments '{}'",
+            std::move(args_str)));
   }
+}
+
+// Helper that can be supplied to assert_throw to match any thrown exception
+struct AnyException {};
+
+template <typename Exception = AnyException, typename Fn, typename... Args>
+requires std::invocable<Fn, Args...> constexpr void
+assert_throw(FnWithSource<Fn> fn, Args &&...args) {
+  if constexpr (std::is_same_v<Exception, AnyException>) {
+    try {
+      // Can't forward args here, because it's used later
+      std::invoke(fn.fn, args...);
+    } catch (...) {
+      return; // PASSED
+    }
+  } else {
+    try {
+      // Can't forward args here, because it's used later
+      std::invoke(fn.fn, args...);
+    } catch (const Exception &) {
+      return; // PASSED
+    } catch (const std::exception &e) {
+      auto args_str = detail::args_string(std::forward<Args>(args)...);
+      detail::fail(fn.location,
+                   fmt::format("ASSERT:Invokation threw exception of "
+                               "unexpected type derived from std::exception "
+                               "with arguments '{}'. what(): '{}'",
+                               std::move(args_str), e.what()));
+    } catch (...) {
+      auto args_str = detail::args_string(std::forward<Args>(args)...);
+      detail::fail(
+          fn.location,
+          fmt::format("ASSERT: Invokation threw exception of unexpected and "
+                      "unknown type with arguments '{}'",
+                      std::move(args_str)));
+    }
+  }
+
+  auto args_str = detail::args_string(std::forward<Args>(args)...);
+  detail::fail(
+      fn.location,
+      fmt::format(
+          "ASSERT: Invokation did not throw an exception with arguments '{}'",
+          std::move(args_str)));
 }
 
 struct TestSuite {
