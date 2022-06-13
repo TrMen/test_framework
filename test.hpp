@@ -1,20 +1,21 @@
 #pragma once
 
-#include <atomic>
 #include <concepts>
 #include <experimental/source_location>
 #include <fmt/core.h>
 #include <iostream>
-#include <mutex>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <type_traits>
 
 namespace testing {
 
-struct TestFailure : std::exception {};
+struct TestFailure : std::logic_error {
+  explicit TestFailure(const std::string &what) : std::logic_error(what) {}
+};
 
 namespace detail {
 template <typename T> concept printable = requires(T &&t) {
@@ -39,11 +40,74 @@ concept fixture_testcase = requires(Class fixture, Method &&method) {
   ->std::same_as<void>;
 };
 
-inline void print(std::experimental::source_location location,
-                  std::string_view str) {
-  fmt::print("{}:{}:{} in {}(): {}\n", location.file_name(), location.line(),
-             location.column(), location.function_name(), str);
+template <typename T>
+concept testsuite = requires(T suite, std::string_view sv) {
+  { suite.status() }
+  ->std::same_as<int>;
+
+  suite.add_failed_test(sv);
+
+  suite.increment_total();
+  suite.increment_failed();
+};
+
+template <typename T> struct constexpr_context_helper {};
+
+constexpr void verify(bool condition, std::string_view message = "",
+                      const std::experimental::source_location loc =
+                          std::experimental::source_location::current()) {
+  if (not condition) {
+    throw std::invalid_argument(
+        fmt::format("{}:{}:{} in {}(): {}\n", loc.file_name(), loc.line(),
+                    loc.column(), loc.function_name(), message));
+  }
 }
+
+constexpr size_t strlen(const char *str) {
+  verify(str != nullptr);
+
+  size_t len = 0;
+  for (; *str != '\0'; ++str, ++len) {
+  }
+  return len;
+}
+
+constexpr const char *strchr(const char *str, int i) {
+  char c = static_cast<char>(i); // This dance is for compliance
+
+  if (str == nullptr) {
+    return nullptr;
+  }
+
+  for (; *str != '\0' && *str != c; ++str) {
+  }
+
+  return (*str == c) ? str : nullptr;
+}
+
+template <printable... Args>
+constexpr void print(fmt::format_string<Args...> fmt_str, Args &&...args) {
+  if (not std::is_constant_evaluated()) {
+    fmt::print(fmt_str, args...);
+  }
+
+  // TODO: Do something sensible for test reporting at compile-time
+}
+
+struct ConstexprTestSuite {
+  constexpr ConstexprTestSuite() = default;
+
+  constexpr void add_failed_test(std::string_view sv) const {
+    // TODO: Do something sensible
+  }
+
+  [[nodiscard]] constexpr int status() const { return 0; } // NOLINT
+
+  constexpr void increment_total() const { // TODO: Something sensible
+  }
+  constexpr void increment_failed() const { // TODO: Something sensible
+  }
+};
 
 template <typename T> std::string to_string(T &&val) {
   if constexpr (printable<T>) {
@@ -60,8 +124,13 @@ template <typename T> std::string to_string(T &&val) {
 
 [[noreturn]] inline void fail(std::experimental::source_location location,
                               std::string_view str) {
-  print(location, str);
-  throw TestFailure{};
+  throw TestFailure{fmt::format("{}:{}:{} in {}(): {}\n", location.file_name(),
+                                location.line(), location.column(),
+                                location.function_name(), str)};
+}
+
+constexpr bool isspace(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
 constexpr const char *skip_whitespace_and_ampersand(const char *str) {
@@ -69,7 +138,7 @@ constexpr const char *skip_whitespace_and_ampersand(const char *str) {
     return nullptr;
   }
 
-  while (*str != '\0' && (isspace(*str) != 0) || (*str == '&')) {
+  while (*str != '\0' && isspace(*str) || (*str == '&')) {
     ++str;
   }
 
@@ -89,7 +158,7 @@ template <typename... Args> std::string args_string(Args &&...args) {
 } // namespace detail
 
 template <typename Lhs, typename Rhs>
-requires std::equality_comparable_with<Lhs, Rhs> void
+requires std::equality_comparable_with<Lhs, Rhs> constexpr void
 assert_eq(Lhs &&lhs, Rhs &&rhs,
           const std::experimental::source_location location =
               std::experimental::source_location::current()) {
@@ -101,16 +170,16 @@ assert_eq(Lhs &&lhs, Rhs &&rhs,
   }
 }
 
-inline void assert_true(bool val,
-                        const std::experimental::source_location location =
-                            std::experimental::source_location::current()) {
+constexpr void assert_true(bool val,
+                           const std::experimental::source_location location =
+                               std::experimental::source_location::current()) {
   if (not val) {
     detail::fail(location, "ASSERT: Value is false");
   }
 }
 
 template <typename Fn, typename... Args>
-requires std::invocable<Fn, Args...> void
+requires std::invocable<Fn, Args...> constexpr void
 assert_nothrow(Fn &&fn, Args &&...args,
                const std::experimental::source_location location =
                    std::experimental::source_location::current()) {
@@ -141,30 +210,30 @@ struct TestSuite {
   TestSuite &operator=(const TestSuite &) = delete;
   TestSuite &operator=(TestSuite &&) = delete;
 
-  [[nodiscard]] int status() {
-    std::lock_guard lock{mut};
-    return failed;
-  }
+  void add_failed_test(std::string_view sv) { failed_testnames.push_back(sv); }
+
+  [[nodiscard]] int status() const { return failed; }
 
   ~TestSuite() {
-    std::lock_guard lock{mut};
-
-    fmt::print("\n");
+    detail::print("\n");
     for (const auto &failed_testname : failed_testnames) {
-      fmt::print("{}: {}\n", detail::FAILED, failed_testname);
+      detail::print("{}: {}\n", detail::FAILED, failed_testname);
     }
-    fmt::print("SUMMARY: Ran {} tests. {} failed.\n\n", total.load(), failed);
+    detail::print("SUMMARY: Ran {} tests. {} failed.\n\n", total, failed);
   }
 
-  std::atomic<int> total = 0;
+  void increment_total() { total += 1; }
+  void increment_failed() { failed += 1; }
+
+  int total = 0;
   int failed = 0;
-  std::mutex mut;
   std::vector<std::string_view> failed_testnames;
 };
 
-template <detail::testcase Fn>
-bool test_single(TestSuite &testInfo, std::string_view fn_name, Fn &&fn) {
-  fmt::print("Running {}...\n", fn_name);
+template <detail::testsuite Suite, detail::testcase Fn>
+constexpr bool test_single(Suite &test_suite, std::string_view fn_name,
+                           Fn &&fn) {
+  detail::print("Running {}...\n", fn_name);
 
   bool passed = false;
   try {
@@ -174,45 +243,44 @@ bool test_single(TestSuite &testInfo, std::string_view fn_name, Fn &&fn) {
     passed = false;
   }
 
-  fmt::print("{}: {}\n", passed ? detail::PASSED : detail::FAILED, fn_name);
+  detail::print("{}: {}\n", passed ? detail::PASSED : detail::FAILED, fn_name);
 
-  testInfo.total += 1;
+  test_suite.increment_total();
 
   if (not passed) {
-    std::lock_guard lock{testInfo.mut};
-    testInfo.failed += 1;
-    testInfo.failed_testnames.push_back(fn_name);
+    test_suite.increment_failed();
+    test_suite.add_failed_test(fn_name);
   }
 
   return passed;
 }
 
-template <detail::testcase Fn, detail::testcase... Fns>
-int test_all(TestSuite &testInfo, const char *fn_names, Fn &&fn,
-             Fns &&...rest) {
+template <detail::testsuite Suite, detail::testcase Fn, detail::testcase... Fns>
+constexpr int test_all(Suite &test_suite, const char *fn_names, Fn &&fn,
+                       Fns &&...rest) {
   fn_names = detail::skip_whitespace_and_ampersand(fn_names);
   if constexpr (sizeof...(rest) > 0) {
-    const char *pcomma = strchr(fn_names, ',');
+    const char *pcomma = detail::strchr(fn_names, ',');
     std::string_view fn_name{fn_names, static_cast<size_t>(pcomma - fn_names)};
 
-    bool single_passed = test_single(testInfo, fn_name, std::forward<Fn>(fn));
+    bool single_passed = test_single(test_suite, fn_name, std::forward<Fn>(fn));
     auto rest_passed =
-        test_all(testInfo, pcomma + 1, std::forward<Fns>(rest)...);
+        test_all(test_suite, pcomma + 1, std::forward<Fns>(rest)...);
 
     return static_cast<int>(single_passed) + rest_passed;
   } else {
-    std::string_view fn_name{fn_names, strlen(fn_names)};
+    std::string_view fn_name{fn_names, detail::strlen(fn_names)};
 
     return static_cast<int>(
-        test_single(testInfo, fn_name, std::forward<Fn>(fn)));
+        test_single(test_suite, fn_name, std::forward<Fn>(fn)));
   }
 }
 
-template <detail::testfixture Class, typename Method>
-requires detail::fixture_testcase<Class, Method> bool
-test_single_with_fixture(TestSuite &testInfo, std::string_view fn_name,
+template <detail::testfixture Class, detail::testsuite Suite, typename Method>
+requires detail::fixture_testcase<Class, Method> constexpr bool
+test_single_with_fixture(Suite &test_suite, std::string_view fn_name,
                          Method &&fn) {
-  fmt::print("Running {}...\n", fn_name);
+  detail::print("Running {}...\n", fn_name);
 
   bool passed = false;
 
@@ -227,48 +295,66 @@ test_single_with_fixture(TestSuite &testInfo, std::string_view fn_name,
     }
   }
 
-  fmt::print("{}: {}\n", passed ? detail::PASSED : detail::FAILED, fn_name);
+  detail::print("{}: {}\n", passed ? detail::PASSED : detail::FAILED, fn_name);
 
-  testInfo.total += 1;
+  test_suite.increment_total();
 
   if (not passed) {
-    std::lock_guard lock{testInfo.mut};
-    testInfo.failed += 1;
-    testInfo.failed_testnames.push_back(fn_name);
+    test_suite.increment_failed();
+    test_suite.add_failed_test(fn_name);
   }
 
   return passed;
 }
 
-template <detail::testfixture Klass, typename Method, typename... Methods>
+template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
+          typename... Methods>
     requires detail::fixture_testcase<Klass, Method> &&
     (detail::fixture_testcase<Klass, Methods> &&
-     ...) int test_all_with_fixture(TestSuite &testInfo, const char *fn_names,
-                                    Method &&fn, Methods &&...rest) {
+     ...) constexpr int test_all_with_fixture(Suite &test_suite,
+                                              const char *fn_names, Method &&fn,
+                                              Methods &&...rest) {
   fn_names = detail::skip_whitespace_and_ampersand(fn_names);
   if constexpr (sizeof...(rest) > 0) {
-    const char *pcomma = strchr(fn_names, ',');
+    const char *pcomma = detail::strchr(fn_names, ',');
     std::string_view fn_name{fn_names, static_cast<size_t>(pcomma - fn_names)};
 
     bool single_passed = test_single_with_fixture<Klass>(
-        testInfo, fn_name, std::forward<Method>(fn));
+        test_suite, fn_name, std::forward<Method>(fn));
 
     auto rest_fails = test_all_with_fixture<Klass>(
-        testInfo, pcomma + 1, std::forward<Methods>(rest)...);
+        test_suite, pcomma + 1, std::forward<Methods>(rest)...);
 
     return rest_fails + static_cast<int>(single_passed);
   } else {
-    std::string_view fn_name{fn_names, strlen(fn_names)};
+    std::string_view fn_name{fn_names, detail::strlen(fn_names)};
 
     return static_cast<int>(test_single_with_fixture<Klass>(
-        testInfo, fn_name, std::forward<Method>(fn)));
+        test_suite, fn_name, std::forward<Method>(fn)));
   }
 }
 
 #define TEST_ALL(suite, ...) testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__)
 
+#define TEST_ALL_CONSTEXPR(...)                                                \
+  []() {                                                                       \
+    constexpr detail::ConstexprTestSuite suite;                                \
+    /* TODO: Is there a nice way to check                                      \
+    if all passed function are constexpr? */                                   \
+    constexpr bool passed =                                                    \
+        testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                   \
+    return passed;                                                             \
+  }()
+
 #define TEST_ALL_WITH_FIXTURE(suite, klass, ...)                               \
-                                                                               \
   testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__, __VA_ARGS__)
+
+#define TEST_ALL_WITH_FIXTURE_CONSTEXPR(klass, ...)                            \
+  []() {                                                                       \
+    constexpr detail::ConstexprTestSuite suite;                                \
+    constexpr bool passed = testing::test_all_with_fixture<klass>(             \
+        suite, #__VA_ARGS__, __VA_ARGS__);                                     \
+    return passed;                                                             \
+  }()
 
 } // namespace testing
