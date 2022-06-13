@@ -5,6 +5,7 @@
 #include <fmt/core.h>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "asserts.hpp"
 #include "concepts.hpp"
@@ -13,15 +14,6 @@
 namespace testing {
 
 namespace detail {
-
-template <size_t size> struct StringLiteral {
-  explicit StringLiteral(const char (&str)[size]) // NOLINT
-  {
-    std::copy_n(str, size, buff.data());
-  }
-
-  std::array<char, size> buff;
-};
 
 template <printable... Args>
 constexpr void print(const std::string_view fmt_str, Args &&...args) { // NOLINT
@@ -193,9 +185,9 @@ constexpr int test_all(Suite &test_suite, const char *fn_names, Fn &&fn,
 }
 
 template <detail::testfixture Class, detail::testsuite Suite, typename Method>
-requires detail::fixture_testcase<Class, Method>
-constexpr bool test_single_with_fixture(Suite &test_suite,
-                                        std::string_view fn_name, Method &&fn) {
+requires detail::fixture_testcase<Class, Method> constexpr bool
+test_single_with_fixture(Suite &test_suite, std::string_view fn_name,
+                         Method &&fn) {
   detail::print("Running {}...\n", fn_name);
 
   bool passed = false;
@@ -227,12 +219,11 @@ constexpr bool test_single_with_fixture(Suite &test_suite,
 
 template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
           typename... Methods>
-requires detail::fixture_testcase<Klass, Method> &&
-    (detail::fixture_testcase<Klass, Methods>
-         &&...) constexpr int test_all_with_fixture(Suite &test_suite,
-                                                    const char *fn_names,
-                                                    Method &&fn,
-                                                    Methods &&...rest) {
+    requires detail::fixture_testcase<Klass, Method> &&
+    (detail::fixture_testcase<Klass, Methods> &&
+     ...) constexpr int test_all_with_fixture(Suite &test_suite,
+                                              const char *fn_names, Method &&fn,
+                                              Methods &&...rest) {
   fn_names = detail::skip_whitespace_and_ampersand(fn_names);
   if constexpr (sizeof...(rest) > 0) {
     const char *pcomma = detail::strchr(fn_names, ',');
@@ -255,20 +246,22 @@ requires detail::fixture_testcase<Klass, Method> &&
 
 #define TEST_ALL(...)                                                          \
   []() {                                                                       \
-    TestSuite lambda_internal_suite;                                           \
-    auto fail_c =                                                              \
+    testing::TestSuite lambda_internal_suite;                                  \
+    auto lambda_internal_fail_c =                                              \
         testing::test_all(lambda_internal_suite, #__VA_ARGS__, __VA_ARGS__);   \
     lambda_internal_suite.report();                                            \
-    return TestInfo{std::move(lambda_internal_suite), fail_c};                 \
+    return testing::TestInfo{std::move(lambda_internal_suite),                 \
+                             lambda_internal_fail_c};                          \
   }()
 
 #define TEST_ALL_FIXTURE(klass, ...)                                           \
   []() {                                                                       \
-    TestSuite lambda_internal_suite;                                           \
-    auto fail_c = testing::test_all_with_fixture<klass>(                       \
+    testing::TestSuite lambda_internal_suite;                                  \
+    auto lambda_internal_fail_c = testing::test_all_with_fixture<klass>(       \
         lambda_internal_suite, #__VA_ARGS__, __VA_ARGS__);                     \
     lambda_internal_suite.report();                                            \
-    return TestInfo{std::move(lambda_internal_suite), fail_c};                 \
+    return testing::TestInfo{std::move(lambda_internal_suite),                 \
+                             lambda_internal_fail_c};                          \
   }()
 
 #define TEST_ALL_SUITE(suite, ...)                                             \
@@ -276,7 +269,7 @@ requires detail::fixture_testcase<Klass, Method> &&
     auto lambda_internal_fail_c =                                              \
         testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                   \
     suite.report();                                                            \
-    return TestInfo{suite, lambda_internal_fail_c};                            \
+    return testing::TestInfo{suite, lambda_internal_fail_c};                   \
   }()
 
 #define TEST_ALL_SUITE_FIXTURE(suite, klass, ...)                              \
@@ -284,7 +277,7 @@ requires detail::fixture_testcase<Klass, Method> &&
     auto lambda_internal_fail_c = testing::test_all_with_fixture<klass>(       \
         suite, #__VA_ARGS__, __VA_ARGS__);                                     \
     suite.report();                                                            \
-    return TestInfo{suite, lambda_internal_fail_c};                            \
+    return testing::TestInfo{suite, lambda_internal_fail_c};                   \
   }()
 
 #define TEST_ALL_CONSTEXPR(...)                                                \
@@ -293,7 +286,7 @@ requires detail::fixture_testcase<Klass, Method> &&
     constexpr auto lambda_internal_fail_c =                                    \
         testing::test_all(lambda_internal_suite, #__VA_ARGS__, __VA_ARGS__);   \
     lambda_internal_suite.report();                                            \
-    return TestInfo{lambda_internal_suite, lambda_internal_fail_c};            \
+    return testing::TestInfo{lambda_internal_suite, lambda_internal_fail_c};   \
   }()
 
 #define TEST_ALL_FIXTURE_CONSTEXPR(klass, ...)                                 \
@@ -303,7 +296,7 @@ requires detail::fixture_testcase<Klass, Method> &&
         testing::test_all_with_fixture<klass>(lambda_internal_suite,           \
                                               #__VA_ARGS__, __VA_ARGS__);      \
     lambda_internal_suite.report();                                            \
-    return TestInfo{lambda_internal_suite, lambda_internal_fail_c};            \
+    return testing::TestInfo{lambda_internal_suite, lambda_internal_fail_c};   \
   }()
 
 } // namespace testing
