@@ -47,7 +47,7 @@ int main() {
 
 The experimental idea is that a lot of functions can be `constexpr` annotated. Especially the kind of functions you would usually use unit tests for, since they should be self-contained.
 
-Any constexpr-annotated function can be run at compiletime with `TEST_ALL_CONSTEXPR`, and if any contained assertion fails, compilation fail deliberately. 
+Any constexpr-annotated function can be run at compiletime with `TEST_ALL_CONSTEXPR`, and if any contained assertion fails, compilation will fail deliberately. 
 
 The workflow here is that you'd use some IDE with a language server that does macro expansion and constexpr variable evaluation. Then your IDE will immediately underline failed tests as you are writing them!
 
