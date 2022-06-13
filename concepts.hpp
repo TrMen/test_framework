@@ -42,4 +42,13 @@ concept testsuite = requires(T suite, std::string_view sv) {
   suite.report();
 };
 
+template <auto> struct constant_evaluation_helper;
+
+template <void (*fn)()> concept constexpr_testcase = requires() {
+  // If Fn can be constant evaluted, its result can be used as a template
+  // parameter for the helper struct. Because Fn() might return void, use the
+  // comma operator to always have a value.
+  typename constant_evaluation_helper<(fn(), 0)>;
+};
+
 } // namespace testing::detail
