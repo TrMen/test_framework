@@ -46,19 +46,24 @@ inline void print(std::experimental::source_location location,
              location.column(), location.function_name(), str);
 }
 
-template <typename T> std::string str(const T &val) {
-  if constexpr (detail::printable<T>) {
+template <typename T> std::string to_string(T &&val) {
+  if constexpr (printable<T>) {
     std::stringstream s;
-    s << val;
+    s << std::forward<T>(val);
     return s.str();
-  } else if constexpr (std::is_enum_v<T>) {
-    return std::to_string(static_cast<std::underlying_type_t<T>>(val));
+  } else if constexpr (std::is_enum_v<T &&>) {
+    return std::to_string(
+        static_cast<std::underlying_type_t<T>>(std::forward<T>(val)));
   } else {
     return "<UNPRINTABLE>";
   }
 }
 
-[[noreturn]] inline void fail() { throw TestFailure{}; }
+[[noreturn]] inline void fail(std::experimental::source_location location,
+                              std::string_view str) {
+  print(location, str);
+  throw TestFailure{};
+}
 
 constexpr const char *skip_whitespace_and_ampersand(const char *str) {
   if (str == nullptr) {
@@ -75,9 +80,9 @@ constexpr const char *skip_whitespace_and_ampersand(const char *str) {
 constexpr const char *FAILED = "\033[0;31mFAILED\33[0m";
 constexpr const char *PASSED = "\033[0;32mPASSED\33[0m";
 
-template <detail::printable... Ts> std::string args_string(Ts &&...args) {
+template <typename... Args> std::string args_string(Args &&...args) {
   std::stringstream str;
-  ((str << args << ", "), ...);
+  ((str << to_string(std::forward<Args>(args)) << ", "), ...);
 
   return str.str();
 }
@@ -86,13 +91,14 @@ template <detail::printable... Ts> std::string args_string(Ts &&...args) {
 
 template <typename Lhs, typename Rhs>
 requires std::equality_comparable_with<Lhs, Rhs> void
-assert_eq(const Lhs &lhs, const Rhs &rhs,
+assert_eq(Lhs &&lhs, Rhs &&rhs,
           const std::experimental::source_location location =
               std::experimental::source_location::current()) {
   if (lhs != rhs) {
-    detail::print(location, fmt::format("ASSERT: '{}' and '{}' are not equal",
-                                        detail::str(lhs), detail::str(rhs)));
-    detail::fail();
+    detail::fail(location,
+                 fmt::format("ASSERT: '{}' and '{}' are not equal",
+                             detail::to_string(std::forward<Lhs>(lhs)),
+                             detail::to_string(std::forward<Rhs>(rhs))));
   }
 }
 
@@ -100,8 +106,7 @@ inline void assert_true(bool val,
                         const std::experimental::source_location location =
                             std::experimental::source_location::current()) {
   if (not val) {
-    detail::print(location, "ASSERT: Value is false");
-    detail::fail();
+    detail::fail(location, "ASSERT: Value is false");
   }
 }
 
@@ -111,22 +116,21 @@ assert_nothrow(Fn &&fn, Args &&...args,
                const std::experimental::source_location location =
                    std::experimental::source_location::current()) {
   try {
-    std::invoke(std::forward<Fn>(fn), std::forward<Args>(args)...);
+    // Can't forward args here, because it's potentially used in the catch
+    std::invoke(std::forward<Fn>(fn), args...);
   } catch (const std::exception &e) {
-    auto args_str = detail::args_string(detail::str(args)...);
-    detail::print(location,
-                  fmt::format("ASSERT: Unexpected std::exception thrown "
-                              "with arguments '{}'. what(): '{}'",
-                              args_str, e.what()));
+    auto args_str = detail::args_string(std::forward<Args>(args)...);
+    detail::fail(location,
+                 fmt::format("ASSERT: Unexpected std::exception thrown "
+                             "with arguments '{}'. what(): '{}'",
+                             std::move(args_str), e.what()));
 
-    detail::fail();
   } catch (...) {
-    auto args_str = detail::args_string(detail::str(args)...);
-    detail::print(
+    auto args_str = detail::args_string(std::forward<Args>(args)...);
+    detail::fail(
         location,
         fmt::format("ASSERT: Unknown exception thrown with arguments '{}'",
-                    args_str));
-    detail::fail();
+                    std::move(args_str)));
   }
 }
 
