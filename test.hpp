@@ -8,6 +8,7 @@
 
 #include "asserts.hpp"
 #include "concepts.hpp"
+#include "verify.hpp"
 
 namespace testing {
 
