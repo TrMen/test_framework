@@ -70,7 +70,7 @@ constexpr const char *strchr(const char *str, int i) {
 struct ConstexprTestSuite {
   constexpr ConstexprTestSuite() = default;
 
-  constexpr void add_failed_test(std::string_view sv) const {
+  constexpr void add_failed_test(std::string_view) const {
     // TODO: Do something sensible
   }
 
@@ -94,7 +94,7 @@ constexpr const char *skip_whitespace_and_ampersand(const char *str) {
     return nullptr;
   }
 
-  while (*str != '\0' && isspace(*str) || (*str == '&')) {
+  while ((*str != '\0' && isspace(*str)) || (*str == '&')) {
     ++str;
   }
 
@@ -193,9 +193,9 @@ constexpr int test_all(Suite &test_suite, const char *fn_names, Fn &&fn,
 }
 
 template <detail::testfixture Class, detail::testsuite Suite, typename Method>
-requires detail::fixture_testcase<Class, Method> constexpr bool
-test_single_with_fixture(Suite &test_suite, std::string_view fn_name,
-                         Method &&fn) {
+requires detail::fixture_testcase<Class, Method>
+constexpr bool test_single_with_fixture(Suite &test_suite,
+                                        std::string_view fn_name, Method &&fn) {
   detail::print("Running {}...\n", fn_name);
 
   bool passed = false;
@@ -227,11 +227,12 @@ test_single_with_fixture(Suite &test_suite, std::string_view fn_name,
 
 template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
           typename... Methods>
-    requires detail::fixture_testcase<Klass, Method> &&
-    (detail::fixture_testcase<Klass, Methods> &&
-     ...) constexpr int test_all_with_fixture(Suite &test_suite,
-                                              const char *fn_names, Method &&fn,
-                                              Methods &&...rest) {
+requires detail::fixture_testcase<Klass, Method> &&
+    (detail::fixture_testcase<Klass, Methods>
+         &&...) constexpr int test_all_with_fixture(Suite &test_suite,
+                                                    const char *fn_names,
+                                                    Method &&fn,
+                                                    Methods &&...rest) {
   fn_names = detail::skip_whitespace_and_ampersand(fn_names);
   if constexpr (sizeof...(rest) > 0) {
     const char *pcomma = detail::strchr(fn_names, ',');
@@ -254,51 +255,55 @@ template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
 
 #define TEST_ALL(...)                                                          \
   []() {                                                                       \
-    TestSuite suite;                                                           \
-    auto fail_c = testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);         \
-    suite.report();                                                            \
-    return TestInfo{std::move(suite), fail_c};                                 \
+    TestSuite lambda_internal_suite;                                           \
+    auto fail_c =                                                              \
+        testing::test_all(lambda_internal_suite, #__VA_ARGS__, __VA_ARGS__);   \
+    lambda_internal_suite.report();                                            \
+    return TestInfo{std::move(lambda_internal_suite), fail_c};                 \
   }()
 
 #define TEST_ALL_FIXTURE(klass, ...)                                           \
   []() {                                                                       \
-    TestSuite suite;                                                           \
-    auto fail_c = testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__,   \
-                                                        __VA_ARGS__);          \
-    suite.report();                                                            \
-    return TestInfo{std::move(suite), fail_c};                                 \
+    TestSuite lambda_internal_suite;                                           \
+    auto fail_c = testing::test_all_with_fixture<klass>(                       \
+        lambda_internal_suite, #__VA_ARGS__, __VA_ARGS__);                     \
+    lambda_internal_suite.report();                                            \
+    return TestInfo{std::move(lambda_internal_suite), fail_c};                 \
   }()
 
 #define TEST_ALL_SUITE(suite, ...)                                             \
   [&suite]() {                                                                 \
-    auto fail_c = testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);         \
+    auto lambda_internal_fail_c =                                              \
+        testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                   \
     suite.report();                                                            \
-    return TestInfo{suite, fail_c};                                            \
+    return TestInfo{suite, lambda_internal_fail_c};                            \
   }()
 
 #define TEST_ALL_SUITE_FIXTURE(suite, klass, ...)                              \
   [&suite]() {                                                                 \
-    auto fail_c = testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__,   \
-                                                        __VA_ARGS__);          \
+    auto lambda_internal_fail_c = testing::test_all_with_fixture<klass>(       \
+        suite, #__VA_ARGS__, __VA_ARGS__);                                     \
     suite.report();                                                            \
-    return TestInfo{suite, fail_c};                                            \
+    return TestInfo{suite, lambda_internal_fail_c};                            \
   }()
 
 #define TEST_ALL_CONSTEXPR(...)                                                \
   []() {                                                                       \
-    constexpr testing::detail::ConstexprTestSuite suite;                       \
-    constexpr auto fail_c =                                                    \
-        testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                   \
-    suite.report();                                                            \
-    return TestInfo{suite, fail_c};                                            \
+    constexpr testing::detail::ConstexprTestSuite lambda_internal_suite;       \
+    constexpr auto lambda_internal_fail_c =                                    \
+        testing::test_all(lambda_internal_suite, #__VA_ARGS__, __VA_ARGS__);   \
+    lambda_internal_suite.report();                                            \
+    return TestInfo{lambda_internal_suite, lambda_internal_fail_c};            \
   }()
 
 #define TEST_ALL_FIXTURE_CONSTEXPR(klass, ...)                                 \
   []() {                                                                       \
-    constexpr testing::detail::ConstexprTestSuite suite;                       \
-    constexpr auto fail_c = testing::test_all_with_fixture<klass>(             \
-        suite, #__VA_ARGS__, __VA_ARGS__);                                     \
-    return TestInfo{suite, fail_c};                                            \
+    constexpr testing::detail::ConstexprTestSuite lambda_internal_suite;       \
+    constexpr auto lambda_internal_fail_c =                                    \
+        testing::test_all_with_fixture<klass>(lambda_internal_suite,           \
+                                              #__VA_ARGS__, __VA_ARGS__);      \
+    lambda_internal_suite.report();                                            \
+    return TestInfo{lambda_internal_suite, lambda_internal_fail_c};            \
   }()
 
 } // namespace testing
