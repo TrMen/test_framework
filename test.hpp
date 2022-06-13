@@ -334,7 +334,24 @@ template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
   }
 }
 
-#define TEST_ALL(suite, ...) testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__)
+#define TEST_ALL(...)                                                          \
+  []() {                                                                       \
+    TestSuite suite;                                                           \
+    return testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__);                \
+  }()
+
+#define TEST_ALL_FIXTURE(klass, ...)                                           \
+  []() {                                                                       \
+    TestSuite suite;                                                           \
+    return testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__,          \
+                                                 __VA_ARGS__);                 \
+  }()
+
+#define TEST_ALL_SUITE(suite, ...)                                             \
+  testing::test_all(suite, #__VA_ARGS__, __VA_ARGS__)
+
+#define TEST_ALL_SUITE_FIXTURE(suite, klass, ...)                              \
+  testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__, __VA_ARGS__)
 
 #define TEST_ALL_CONSTEXPR(...)                                                \
   []() {                                                                       \
@@ -346,10 +363,7 @@ template <detail::testfixture Klass, detail::testsuite Suite, typename Method,
     return passed;                                                             \
   }()
 
-#define TEST_ALL_WITH_FIXTURE(suite, klass, ...)                               \
-  testing::test_all_with_fixture<klass>(suite, #__VA_ARGS__, __VA_ARGS__)
-
-#define TEST_ALL_WITH_FIXTURE_CONSTEXPR(klass, ...)                            \
+#define TEST_ALL_FIXTURE_CONSTEXPR(klass, ...)                                 \
   []() {                                                                       \
     constexpr detail::ConstexprTestSuite suite;                                \
     constexpr bool passed = testing::test_all_with_fixture<klass>(             \
